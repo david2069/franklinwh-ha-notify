@@ -7,6 +7,8 @@ buttons, receives the taps, and keeps a record of both.
 
 It holds no FranklinWH device code. What a button *does* is up to the bridge.
 
+The design, decisions and plan are in [docs/DESIGN.md](docs/DESIGN.md).
+
 ## What it does
 
 | Piece | Module |
