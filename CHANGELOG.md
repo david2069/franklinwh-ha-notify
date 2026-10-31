@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Docs
+- `docs/DESIGN.md`: the approved design, decisions, scope against FWHAI, the tap diagram and the plan.
+
 ## [0.1.0] — 2026-10-31
 
 ### Added
