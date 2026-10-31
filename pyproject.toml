@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "franklinwh-ha-notify"
+version = "0.1.0"
+description = "Home Assistant notifications with buttons for the FranklinWH bridges: targets, sending, taps over the WebSocket, single-use requests, templates and a ledger"
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+authors = [{name = "david2069"}]
+dependencies = [
+    "httpx>=0.27",
+    "websockets>=13",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8.0", "pytest-asyncio>=0.23"]
+
+[project.urls]
+Source = "https://github.com/david2069/franklinwh-ha-notify"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"

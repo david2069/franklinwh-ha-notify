@@ -1,0 +1,28 @@
+name: Publish to PyPI
+# On a v* tag: build, test, publish with PyPI trusted publishing (no token stored here).
+# One-time setup on pypi.org: add this repo and workflow as a trusted publisher for
+# franklinwh-ha-notify, environment "pypi".
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: read
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -e ".[test]" build
+      - run: pytest -q
+      - run: |
+          tag="${GITHUB_REF_NAME#v}"
+          ver=$(python -c "import tomllib;print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
+          [ "$tag" = "$ver" ] || { echo "tag $tag != pyproject $ver"; exit 1; }
+      - run: python -m build
+      - uses: pypa/gh-action-pypi-publish@release/v1
