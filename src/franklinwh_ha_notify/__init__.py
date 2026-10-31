@@ -3,7 +3,7 @@ from importlib.metadata import PackageNotFoundError, version as _v
 
 from .actions import NO, REPLY, YES, Answer, Button, Outcome, Request, Requests, action_id, parse
 from .ha import SUPERVISOR_CORE, HAInstance
-from .ledger import Ledger
+from .ledger import SCHEMA, SCHEMA_VERSION, Ledger
 from .listener import Listener, Tap
 from .notifier import Notifier
 from .send import SendResult, payload, send
@@ -17,6 +17,6 @@ except PackageNotFoundError:  # running from a checkout without install
 
 __all__ = [
     "YES", "NO", "REPLY", "Answer", "Button", "Outcome", "Request", "Requests", "action_id",
-    "parse", "SUPERVISOR_CORE", "HAInstance", "Ledger", "Listener", "Tap", "Notifier",
+    "parse", "SUPERVISOR_CORE", "HAInstance", "Ledger", "SCHEMA", "SCHEMA_VERSION", "Listener", "Tap", "Notifier",
     "SendResult", "payload", "send", "Target", "discover", "friendly", "Event", "Templates",
 ]

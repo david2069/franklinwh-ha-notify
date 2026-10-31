@@ -4,14 +4,23 @@ can't push out last week.
 
 Directions: SENT, ERROR (nothing delivered), SKIPPED (switched off, no targets),
 RECEIVED (a tap; ``status`` says how it resolved).
+
+The bridge owns its schema. ``create=False`` leaves the table to the bridge's own
+migration, which applies :data:`SCHEMA` (version :data:`SCHEMA_VERSION`). From async code
+call :meth:`arecord`, which writes off the event loop. Old rows are pruned at most once
+an hour, not on every insert.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import sqlite3
 import threading
 import time
 from typing import Any
+
+#: Bumped when SCHEMA changes, so a bridge's migration knows to apply it again.
+SCHEMA_VERSION = 1
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS notify_ledger (
@@ -33,13 +42,17 @@ CREATE INDEX IF NOT EXISTS notify_ledger_ts ON notify_ledger (ts);
 
 
 class Ledger:
-    def __init__(self, conn: sqlite3.Connection, keep_days: int = 30):
+    PRUNE_EVERY_S = 3600
+
+    def __init__(self, conn: sqlite3.Connection, keep_days: int = 30, *, create: bool = True):
         self._db = conn
         self._lock = threading.Lock()
         self.keep_days = keep_days
-        with self._lock:
-            self._db.executescript(SCHEMA)
-            self._db.commit()
+        self._pruned_at = 0.0
+        if create:
+            with self._lock:
+                self._db.executescript(SCHEMA)
+                self._db.commit()
 
     def record(self, direction: str, event: str, *, gateway: str | None = None,
                request_id: str | None = None, status: str | None = None,
@@ -53,9 +66,16 @@ class Ledger:
                 (ts or time.time(), direction, event, gateway, request_id, status, title,
                  message, delivered, total,
                  None if detail is None else json.dumps(detail, default=str)))
-            self._db.execute("DELETE FROM notify_ledger WHERE ts < ?",
-                             (time.time() - self.keep_days * 86400,))
+            now = time.time()
+            if now - self._pruned_at >= self.PRUNE_EVERY_S:
+                self._db.execute("DELETE FROM notify_ledger WHERE ts < ?",
+                                 (now - self.keep_days * 86400,))
+                self._pruned_at = now
             self._db.commit()
+
+    async def arecord(self, direction: str, event: str, **kw) -> None:
+        """:meth:`record` on a worker thread, so a send or tap never blocks the loop."""
+        await asyncio.to_thread(self.record, direction, event, **kw)
 
     def recent(self, limit: int = 100, gateway: str | None = None) -> list[dict]:
         sql = "SELECT * FROM notify_ledger"

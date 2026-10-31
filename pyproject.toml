@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "franklinwh-ha-notify"
-version = "0.1.0"
+version = "0.1.1"
 description = "Home Assistant notifications with buttons for the FranklinWH bridges: targets, sending, taps over the WebSocket, single-use requests, templates and a ledger"
 readme = "README.md"
 requires-python = ">=3.11"
