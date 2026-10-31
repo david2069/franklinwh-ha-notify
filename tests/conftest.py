@@ -85,4 +85,4 @@ def instance(fake_ha):
 
 @pytest.fixture
 def ledger():
-    return Ledger(sqlite3.connect(":memory:"))
+    return Ledger(sqlite3.connect(":memory:", check_same_thread=False))

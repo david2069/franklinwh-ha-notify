@@ -18,7 +18,7 @@ The design, decisions and plan are in [docs/DESIGN.md](docs/DESIGN.md).
 | Receive taps over HA's WebSocket (`mobile_app_notification_action`), reconnecting | `listener` |
 | Single-use, expiring requests; wait for an answer with a timeout | `actions` |
 | Title and message templates per event, with variables and reset | `templates` |
-| A record of every send and tap, kept for a number of days | `ledger` |
+| A record of every send and tap, kept for a number of days. `create=False` leaves the table to the bridge's own migration (apply `SCHEMA`) | `ledger` |
 | All of the above behind one object | `Notifier` |
 
 ## The button contract

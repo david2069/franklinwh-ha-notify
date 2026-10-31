@@ -47,7 +47,7 @@ class Notifier:
         """Send with buttons. None when nothing went out (switched off, no phone
         delivered), so the caller can apply its no-reply rule at once."""
         if not any(t.buttons for t in targets):
-            self.ledger.record("SKIPPED", event, gateway=gateway, status="no target can show buttons")
+            await self.ledger.arecord("SKIPPED", event, gateway=gateway, status="no target can show buttons")
             return None
         req = self.requests.open(event, buttons, ttl_s, gateway, meta)
         res = await self._send(event, targets, gateway, req, values)
@@ -60,19 +60,19 @@ class Notifier:
             return Answer(None, timed_out=True)
         ans = await self.requests.wait(req.id, timeout_s)
         if ans.timed_out:
-            self.ledger.record("RECEIVED", event, gateway=gateway, request_id=req.id,
+            await self.ledger.arecord("RECEIVED", event, gateway=gateway, request_id=req.id,
                                status="no reply")
         return ans
 
     async def _send(self, event, targets, gateway, req: Request | None, values) -> SendResult:
         title, message = self.templates.render(event, gateway=gateway or "", **values)
         if not self.enabled():
-            self.ledger.record("SKIPPED", event, gateway=gateway, title=title, message=message,
+            await self.ledger.arecord("SKIPPED", event, gateway=gateway, title=title, message=message,
                                status="notifications are off")
             return SendResult()
         res = await send(self.instances, targets, title, message,
                          list(req.buttons) if req else None, req.id if req else None)
-        self.ledger.record(
+        await self.ledger.arecord(
             "SENT" if res.delivered else "ERROR", event, gateway=gateway,
             request_id=req.id if req else None, status=res.summary, title=title,
             message=message, delivered=res.delivered, total=res.total,
@@ -92,7 +92,7 @@ class Notifier:
                     result = await handler(req, out.answer)
                 except Exception as e:  # noqa: BLE001 — recorded, never raised into the listener
                     result = f"failed: {type(e).__name__}: {e}"
-        self.ledger.record("RECEIVED", event, gateway=gateway, request_id=tap.request_id,
+        await self.ledger.arecord("RECEIVED", event, gateway=gateway, request_id=tap.request_id,
                            status=out.status if result is None else f"{out.status}: {result}",
                            detail={"verb": tap.verb, "reply": tap.reply,
                                    "instance": tap.instance_id})
