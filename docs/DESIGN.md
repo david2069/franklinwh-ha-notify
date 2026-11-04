@@ -118,8 +118,12 @@ sequenceDiagram
 - **Every tap needs its request.** Unknown, expired or already-used ids do nothing and are recorded with the reason.
 - **Same gates as the UI.** A button calls the command the UI would, with the same checks, on the gateway named in
   the request.
-- Requests live in memory. Expiries are minutes, so a restart losing them is acceptable: a tap after a restart
-  resolves as `unknown` and says so.
+- Requests live in memory by default; a tap after a restart then resolves as `unknown` and says so. A bridge that
+  must answer across restarts (a scheduler's "Ask before continuing", Release/Keep for 15 minutes, Acknowledge
+  for an hour) uses `Requests.persistent(conn)`, which keeps them in its database (`notify_requests`, schema
+  version 2): a tap inside the TTL after a restart resolves to the original request, and one after expiry is
+  still recorded as expired. `Notifier.pending()` lists what is still open or answered but not yet collected,
+  and `Notifier.wait(request, timeout_s)` waits again for the time left (0.1.2, #6).
 
 ## First buttons in the Direct Connect bridge
 
