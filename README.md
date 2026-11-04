@@ -74,6 +74,21 @@ if answer.timed_out:
     ...                                      # the step's "if no reply" rule
 ```
 
+### Adding or removing an HA instance while running
+
+When the user adds, edits or removes an HA instance in the bridge's settings, tell the
+running notifier; no restart is needed for taps:
+
+```python
+await n.add_instance(HAInstance("cabin", "https://ha.example.com", token))  # listener starts
+await n.add_instance(HAInstance("cabin", "https://ha.example.com", new_token))  # signs in again
+await n.remove_instance("cabin")                                             # listener closes
+await n.set_instances(instances_from_settings)                               # or sync them all
+```
+
+A new instance gets a listener only while the notifier is listening (after `listen()`,
+before `close()`). Call these on the notifier's event loop.
+
 ### Requests that survive a restart
 
 In memory is the default. To keep open requests across a restart, keep them in the

@@ -71,7 +71,7 @@ Both bridges use the same UI stack (Jinja, Alpine.js 3.14, Tailwind 3.4), so a s
 |---|---|
 | Target discovery, button-capable flag | What each button does (its handlers) |
 | Sending, with a delivery count per target | When to notify (its events, its scheduler) |
-| WebSocket listener, reconnect, one per HA instance | Settings UI |
+| WebSocket listener, reconnect, one per HA instance; instances added, changed or removed while running (0.1.3, #5) | Settings UI |
 | Requests: id, expiry, single use, allowed buttons | Gates: writes, confirm, gateway checks, as the UI already applies |
 | Response wait, timeout | Storage (the ledger lives in the bridge's own SQLite) |
 | Templates and variable rendering | |
