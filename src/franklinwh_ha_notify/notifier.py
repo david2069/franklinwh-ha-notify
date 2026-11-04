@@ -32,6 +32,8 @@ class Notifier:
         self.requests = requests or Requests()
         self._handlers: dict[str, Handler] = {}
         self._listeners: dict[str, tuple[Listener, asyncio.Task]] = {}
+        self._listening = False
+        self._lock = asyncio.Lock()
 
     def on(self, event: str, handler: Handler) -> None:
         """Act on an accepted answer to a request opened for ``event``."""
@@ -116,12 +118,56 @@ class Notifier:
         return out
 
     def listen(self, instance_ids: list[str] | None = None) -> None:
-        """Start a tap listener on each instance (all by default). Idempotent."""
+        """Start a tap listener on each instance (all by default). Idempotent. From now
+        until :meth:`close`, an instance added with :meth:`add_instance` gets one too."""
+        self._listening = True
         for iid in instance_ids or list(self.instances):
             if iid in self._listeners or iid not in self.instances:
                 continue
-            ln = Listener(self.instances[iid], self.on_tap)
-            self._listeners[iid] = (ln, asyncio.create_task(ln.run(), name=f"ha-taps-{iid}"))
+            self._start(iid)
+
+    def _start(self, iid: str) -> None:
+        ln = Listener(self.instances[iid], self.on_tap)
+        self._listeners[iid] = (ln, asyncio.create_task(ln.run(), name=f"ha-taps-{iid}"))
+
+    async def _stop(self, iid: str) -> None:
+        entry = self._listeners.pop(iid, None)
+        if entry is not None:
+            entry[1].cancel()
+            await asyncio.gather(entry[1], return_exceptions=True)
+
+    async def add_instance(self, instance: HAInstance) -> None:
+        """Add an HA instance, or replace the one with the same id, on a running notifier.
+
+        While listening, a new instance gets a tap listener. A changed URL or token
+        restarts that instance's listener, so it signs in again; any other change (a
+        name) keeps the connection. Call it on the notifier's event loop."""
+        async with self._lock:
+            iid = instance.id
+            old = self.instances.get(iid)
+            self.instances[iid] = instance
+            entry = self._listeners.get(iid)
+            if entry is not None and old is not None and (
+                    old.ws_url == instance.ws_url and old.token == instance.token):
+                entry[0].ha = instance
+                return
+            await self._stop(iid)
+            if self._listening:
+                self._start(iid)
+
+    async def remove_instance(self, instance_id: str) -> None:
+        """Remove an HA instance and close its tap listener. Unknown ids are ignored."""
+        async with self._lock:
+            self.instances.pop(instance_id, None)
+            await self._stop(instance_id)
+
+    async def set_instances(self, instances: dict[str, HAInstance]) -> None:
+        """Make the notifier's instances exactly ``instances``: add, change and remove
+        as :meth:`add_instance` and :meth:`remove_instance` do."""
+        for iid in [i for i in self.instances if i not in instances]:
+            await self.remove_instance(iid)
+        for inst in instances.values():
+            await self.add_instance(inst)
 
     def listener_status(self) -> dict[str, dict]:
         return {iid: {"connected": ln.connected.is_set(), "error": ln.last_error}
@@ -132,3 +178,4 @@ class Notifier:
             task.cancel()
         await asyncio.gather(*(t for _, t in self._listeners.values()), return_exceptions=True)
         self._listeners.clear()
+        self._listening = False

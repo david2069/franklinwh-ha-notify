@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+## [0.1.3] — 2026-11-04
+
+### Added
+- **Add, change or remove an HA instance on a running `Notifier` (#5).**
+  `await n.add_instance(instance)` adds an instance, or replaces the one with the same id;
+  while the notifier is listening, a new instance gets its tap listener at once, and a
+  changed URL or token restarts that listener so it signs in again (a name change keeps
+  the connection). `await n.remove_instance(instance_id)` removes it and closes its
+  listener. `await n.set_instances(dict)` syncs to a whole set. `listener_status()` shows
+  the change straight away. Before this, an instance added in a bridge's UI received
+  sends but no taps until the bridge restarted.
+
 ## [0.1.2] — 2026-11-04
 
 ### Added
