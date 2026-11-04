@@ -113,3 +113,23 @@ async def test_after_close_adding_starts_no_listener(fake_ha, ledger):
     await n.close()
     await n.add_instance(_inst(fake_ha))
     assert n.listener_status() == {}
+
+
+async def test_a_token_read_through_a_callable_restarts_only_when_it_changes(fake_ha, ledger):
+    # A bridge passes a callable that reads its store, so the new token shows only
+    # through bearer(), and every call builds a new callable.
+    store = {"token": "nope"}
+
+    def inst():
+        return _inst(fake_ha, token=lambda: store["token"])
+    n = _notifier({"home": inst()}, ledger)
+    n.listen()
+    assert await _until(lambda: n.listener_status()["home"]["error"])
+    store["token"] = TOKEN
+    await n.add_instance(inst())
+    await asyncio.wait_for(fake_ha.subscribed.wait(), 5)
+    before = set(fake_ha.clients)
+    await n.add_instance(inst())                    # same token, new callable: kept
+    await asyncio.sleep(0.1)
+    assert set(fake_ha.clients) == before and n.listener_status()["home"]["connected"]
+    await n.close()

@@ -9,7 +9,9 @@
   `await n.add_instance(instance)` adds an instance, or replaces the one with the same id;
   while the notifier is listening, a new instance gets its tap listener at once, and a
   changed URL or token restarts that listener so it signs in again (a name change keeps
-  the connection). `await n.remove_instance(instance_id)` removes it and closes its
+  the connection). The token is compared as `bearer()` gives it now against what the
+  listener last signed in with, so a token callable that reads the bridge's store works;
+  `Listener.token_used` holds that last token. `await n.remove_instance(instance_id)` removes it and closes its
   listener. `await n.set_instances(dict)` syncs to a whole set. `listener_status()` shows
   the change straight away. Before this, an instance added in a bridge's UI received
   sends but no taps until the bridge restarted.

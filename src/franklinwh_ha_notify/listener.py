@@ -58,6 +58,8 @@ class Listener:
         self.backoff_s = backoff_s
         self.connected = asyncio.Event()
         self.last_error: str | None = None
+        #: The token of the last sign-in attempt; None before the first.
+        self.token_used: str | None = None
 
     async def run(self) -> None:
         attempt = 0
@@ -79,7 +81,8 @@ class Listener:
             hello = json.loads(await ws.recv())
             if hello.get("type") != "auth_required":
                 raise AuthError(f"unexpected greeting {hello.get('type')!r}")
-            await ws.send(json.dumps({"type": "auth", "access_token": self.ha.bearer()}))
+            self.token_used = self.ha.bearer()
+            await ws.send(json.dumps({"type": "auth", "access_token": self.token_used}))
             ok = json.loads(await ws.recv())
             if ok.get("type") != "auth_ok":
                 raise AuthError(ok.get("message") or ok.get("type") or "auth failed")

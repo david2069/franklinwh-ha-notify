@@ -147,8 +147,10 @@ class Notifier:
             old = self.instances.get(iid)
             self.instances[iid] = instance
             entry = self._listeners.get(iid)
-            if entry is not None and old is not None and (
-                    old.ws_url == instance.ws_url and old.token == instance.token):
+            # A token may be a callable reading the bridge's store, so compare what the
+            # listener last signed in with against what the instance gives now.
+            if entry is not None and old is not None and old.ws_url == instance.ws_url \
+                    and entry[0].token_used in (None, instance.bearer()):
                 entry[0].ha = instance
                 return
             await self._stop(iid)
