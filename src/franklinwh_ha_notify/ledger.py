@@ -6,7 +6,8 @@ Directions: SENT, ERROR (nothing delivered), SKIPPED (switched off, no targets),
 RECEIVED (a tap; ``status`` says how it resolved).
 
 The bridge owns its schema. ``create=False`` leaves the table to the bridge's own
-migration, which applies :data:`SCHEMA` (version :data:`SCHEMA_VERSION`). From async code
+migration, which applies :data:`SCHEMA` (version :data:`SCHEMA_VERSION`; it also holds
+``notify_requests``, used only by ``Requests.persistent``). From async code
 call :meth:`arecord`, which writes off the event loop. Old rows are pruned at most once
 an hour, not on every insert.
 """
@@ -20,7 +21,9 @@ import time
 from typing import Any
 
 #: Bumped when SCHEMA changes, so a bridge's migration knows to apply it again.
-SCHEMA_VERSION = 1
+#: SCHEMA only ever adds (``IF NOT EXISTS``), so applying it again migrates any earlier
+#: version: 1 -> 2 adds the ``notify_requests`` table for ``Requests.persistent``.
+SCHEMA_VERSION = 2
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS notify_ledger (
@@ -38,6 +41,17 @@ CREATE TABLE IF NOT EXISTS notify_ledger (
     detail TEXT
 );
 CREATE INDEX IF NOT EXISTS notify_ledger_ts ON notify_ledger (ts);
+CREATE TABLE IF NOT EXISTS notify_requests (
+    id TEXT PRIMARY KEY,
+    event TEXT NOT NULL,
+    gateway TEXT,
+    buttons TEXT NOT NULL,
+    expires_at REAL NOT NULL,
+    meta TEXT,
+    used INTEGER NOT NULL DEFAULT 0,
+    answer_verb TEXT,
+    answer_reply TEXT
+);
 """
 
 

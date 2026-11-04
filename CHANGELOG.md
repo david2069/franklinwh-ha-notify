@@ -2,6 +2,24 @@
 
 ## [Unreleased]
 
+## [0.1.2] — 2026-11-04
+
+### Added
+- **Requests that survive a restart (#6).** `Notifier(..., requests=Requests.persistent(conn))`
+  keeps open requests in the `notify_requests` table as well as in memory. Opening,
+  answering and purging write through (off the event loop from `Notifier`, through the new
+  `Requests.aopen` / `aresolve`), and construction loads the rows still held. A tap inside
+  the TTL after a restart resolves to the original request and runs its `on()` handler; a
+  tap after expiry is still recorded as expired. In memory stays the default.
+- `SCHEMA_VERSION` is 2: `SCHEMA` adds `notify_requests`. It only adds, so a bridge on
+  version 1 migrates by applying `SCHEMA` again. `Requests.persistent(conn, create=False)`
+  leaves the table to that migration.
+- `Notifier.pending(event=None)`: requests still open, and answered ones nobody has collected.
+- `Notifier.wait(request, timeout_s)`: the waiting half of `ask_and_wait`, with the same
+  "no reply" ledger row. It waits no longer than the request has left, times out at once
+  for a request that expired unanswered, and returns an answer already given.
+  `ask_and_wait` is now `ask` + `wait`.
+
 ## [0.1.1] — 2026-10-31
 
 ### Fixed

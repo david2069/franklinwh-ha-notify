@@ -16,7 +16,7 @@ The design, decisions and plan are in [docs/DESIGN.md](docs/DESIGN.md).
 | Find each HA instance's `notify.*` targets; mark which can show buttons (`notify.mobile_app_*`) | `targets` |
 | Send one notification to many targets, with a delivery count | `send` |
 | Receive taps over HA's WebSocket (`mobile_app_notification_action`), reconnecting | `listener` |
-| Single-use, expiring requests; wait for an answer with a timeout | `actions` |
+| Single-use, expiring requests; wait for an answer with a timeout. In memory, or kept across restarts with `Requests.persistent(conn)` | `actions` |
 | Title and message templates per event, with variables and reset | `templates` |
 | A record of every send and tap, kept for a number of days. `create=False` leaves the table to the bridge's own migration (apply `SCHEMA`) | `ledger` |
 | All of the above behind one object | `Notifier` |
@@ -30,7 +30,7 @@ while other data fields come back differently on iOS and Android. Buttons withou
 
 A tap resolves as one of:
 - **accepted:** the bridge's handler runs;
-- **unknown:** never issued, or lost in a restart;
+- **unknown:** never issued, or lost in a restart (in-memory requests);
 - **expired**;
 - **used:** already answered;
 - **not-allowed:** a button the request didn't offer.
@@ -73,6 +73,29 @@ answer = await n.ask_and_wait("ok_to_charge", targets, [Button(YES, "Yes"), Butt
 if answer.timed_out:
     ...                                      # the step's "if no reply" rule
 ```
+
+### Requests that survive a restart
+
+In memory is the default. To keep open requests across a restart, keep them in the
+bridge's database (table `notify_requests`; `create=False` leaves it to your migration,
+which applies `SCHEMA`, now version 2):
+
+```python
+db = sqlite3.connect("data/bridge.db", check_same_thread=False)
+n = Notifier({"home": ha}, Ledger(db), templates, requests=Requests.persistent(db))
+
+req = await n.ask("ok_to_charge", targets, [Button(YES, "Yes"), Button(NO, "No")],
+                  ttl_s=1800, gateway="Home")
+save_step_state(request_id=req.id)           # the bridge's own record
+
+# After a restart: a tap inside the TTL resolves to the original request and runs the
+# on() handler. A waiting step finds its request again and waits for the time left:
+req = next((r for r in n.pending("ok_to_charge") if r.id == saved_id), None)
+answer = await n.wait(req, timeout_s=1800) if req else None
+```
+
+`wait` returns an answer already given at once, and times out at once (recorded as
+"no reply") when the request expired while the bridge was down.
 
 ## Development
 

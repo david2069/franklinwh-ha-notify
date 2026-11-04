@@ -49,7 +49,7 @@ class Notifier:
         if not any(t.buttons for t in targets):
             await self.ledger.arecord("SKIPPED", event, gateway=gateway, status="no target can show buttons")
             return None
-        req = self.requests.open(event, buttons, ttl_s, gateway, meta)
+        req = await self.requests.aopen(event, buttons, ttl_s, gateway, meta)
         res = await self._send(event, targets, gateway, req, values)
         return req if res.delivered else None
 
@@ -58,10 +58,27 @@ class Notifier:
         req = await self.ask(event, targets, buttons, ttl_s=timeout_s, gateway=gateway, **values)
         if req is None:
             return Answer(None, timed_out=True)
-        ans = await self.requests.wait(req.id, timeout_s)
+        return await self.wait(req, timeout_s)
+
+    def pending(self, event: str | None = None) -> list[Request]:
+        """Requests still open, and answered ones nobody has collected with :meth:`wait`
+        (after a restart with persistent requests, every answered one still held)."""
+        return self.requests.pending(event)
+
+    async def wait(self, request: Request, timeout_s: float) -> Answer:
+        """The waiting half of :meth:`ask_and_wait`: the answer, or a timeout recorded as
+        "no reply". Waits no longer than the request has left; one that expired
+        unanswered (say while the bridge was down) times out at once, and one already
+        answered returns its answer."""
+        req = self.requests.get(request.id) or request
+        left = min(timeout_s, req.expires_at - self.requests._clock())
+        if req.answer is None and left <= 0:
+            ans = Answer(None, timed_out=True)
+        else:
+            ans = await self.requests.wait(req.id, max(left, 0))
         if ans.timed_out:
-            await self.ledger.arecord("RECEIVED", event, gateway=gateway, request_id=req.id,
-                               status="no reply")
+            await self.ledger.arecord("RECEIVED", req.event, gateway=req.gateway,
+                                      request_id=req.id, status="no reply")
         return ans
 
     async def _send(self, event, targets, gateway, req: Request | None, values) -> SendResult:
@@ -80,7 +97,7 @@ class Notifier:
         return res
 
     async def on_tap(self, tap: Tap) -> Outcome:
-        out = self.requests.resolve(tap.verb, tap.request_id, tap.reply)
+        out = await self.requests.aresolve(tap.verb, tap.request_id, tap.reply)
         req = out.request
         event = req.event if req else "unknown"
         gateway = req.gateway if req else None
