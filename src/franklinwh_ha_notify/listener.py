@@ -34,8 +34,8 @@ class Tap:
 
 
 def tap_from_event(instance_id: str, data: dict) -> Tap | None:
-    action = data.get("action") or ""
-    if not action.startswith(PREFIX):
+    action = data.get("action")
+    if not isinstance(action, str) or not action.startswith(PREFIX):
         return None                     # a phone-side button (Snooze...), not ours
     parsed = parse(action)
     if parsed is None:
@@ -48,8 +48,16 @@ class AuthError(Exception):
     pass
 
 
+class SubscribeError(Exception):
+    pass
+
+
 class Listener:
-    """One subscription per HA instance, reconnecting with back-off until stopped."""
+    """One subscription per HA instance, reconnecting with back-off until stopped.
+
+    Each tap's handler runs in its own task, so a handler that asks and waits for another
+    answer doesn't hold up the taps behind it. A handler bug is logged, never drops the
+    socket."""
 
     def __init__(self, ha: HAInstance, on_tap: Callable[[Tap], Awaitable[None]],
                  backoff_s: tuple[float, ...] = BACKOFF_S):
@@ -60,6 +68,7 @@ class Listener:
         self.last_error: str | None = None
         #: The token of the last sign-in attempt; None before the first.
         self.token_used: str | None = None
+        self._handling: set[asyncio.Task] = set()
 
     async def run(self) -> None:
         attempt = 0
@@ -72,6 +81,8 @@ class Listener:
             except Exception as e:  # noqa: BLE001
                 self.last_error = f"{type(e).__name__}: {e}"
                 log.warning("HA %s tap listener: %s", self.ha.id, self.last_error)
+                if self.connected.is_set():
+                    attempt = 0         # it was up: start the back-off again
             self.connected.clear()
             await asyncio.sleep(self.backoff_s[min(attempt, len(self.backoff_s) - 1)])
             attempt += 1
@@ -87,15 +98,30 @@ class Listener:
             if ok.get("type") != "auth_ok":
                 raise AuthError(ok.get("message") or ok.get("type") or "auth failed")
             await ws.send(json.dumps({"id": 1, "type": "subscribe_events", "event_type": EVENT}))
+            res = json.loads(await ws.recv())
+            if res.get("id") != 1 or res.get("type") != "result" or not res.get("success"):
+                err = res.get("error") or {}
+                raise SubscribeError(err.get("message") or err.get("code") or "subscribe failed")
             self.last_error = None
             self.connected.set()
             async for raw in ws:
                 msg = json.loads(raw)
                 if msg.get("type") != "event":
                     continue
-                tap = tap_from_event(self.ha.id, (msg.get("event") or {}).get("data") or {})
+                try:
+                    tap = tap_from_event(self.ha.id, msg["event"]["data"])
+                except (KeyError, TypeError, AttributeError):
+                    log.warning("HA %s: malformed %s event ignored", self.ha.id, EVENT)
+                    continue
                 if tap is not None:
-                    try:
-                        await self.on_tap(tap)
-                    except Exception:  # noqa: BLE001 — a handler bug never drops the socket
-                        log.exception("tap handler failed for %s", tap.request_id)
+                    self._handle(tap)
+
+    def _handle(self, tap: Tap) -> None:
+        task = asyncio.create_task(self.on_tap(tap), name=f"ha-tap-{tap.request_id}")
+        self._handling.add(task)        # held so it isn't garbage collected mid-run
+        task.add_done_callback(self._handled)
+
+    def _handled(self, task: asyncio.Task) -> None:
+        self._handling.discard(task)
+        if not task.cancelled() and task.exception() is not None:
+            log.error("tap handler failed", exc_info=task.exception())

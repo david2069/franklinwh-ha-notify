@@ -22,6 +22,7 @@ class FakeHA:
         self.clients: set = set()
         self.subscribed = asyncio.Event()
         self.auth_ok = True
+        self.subscribe_ok = True                    # False: subscribe_events fails
         self.port = None
 
     def transport(self) -> httpx.MockTransport:
@@ -49,6 +50,11 @@ class FakeHA:
         sub = json.loads(await ws.recv())
         assert sub["type"] == "subscribe_events"
         assert sub["event_type"] == "mobile_app_notification_action"
+        if not self.subscribe_ok:
+            await ws.send(json.dumps({"id": sub["id"], "type": "result", "success": False,
+                                      "error": {"code": "unauthorized", "message": "Unauthorized"}}))
+            await ws.wait_closed()
+            return
         await ws.send(json.dumps({"id": sub["id"], "type": "result", "success": True}))
         self.clients.add(ws)
         self.subscribed.set()
@@ -62,6 +68,10 @@ class FakeHA:
             "event_type": "mobile_app_notification_action", "data": {"action": action, **extra}}})
         for ws in list(self.clients):
             await ws.send(msg)
+
+    async def send_raw(self, text: str):
+        for ws in list(self.clients):
+            await ws.send(text)
 
     async def drop_clients(self):
         self.subscribed.clear()

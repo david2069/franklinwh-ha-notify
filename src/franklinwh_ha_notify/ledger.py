@@ -8,7 +8,9 @@ RECEIVED (a tap; ``status`` says how it resolved).
 The bridge owns its schema. ``create=False`` leaves the table to the bridge's own
 migration, which applies :data:`SCHEMA` (version :data:`SCHEMA_VERSION`; it also holds
 ``notify_requests``, used only by ``Requests.persistent``). From async code
-call :meth:`arecord`, which writes off the event loop. Old rows are pruned at most once
+call :meth:`arecord`, which writes off the event loop, so the connection must be usable
+from other threads: open it with ``sqlite3.connect(path, check_same_thread=False)``
+(the ledger serialises its own writes with a lock). Old rows are pruned at most once
 an hour, not on every insert.
 """
 from __future__ import annotations
@@ -56,6 +58,9 @@ CREATE TABLE IF NOT EXISTS notify_requests (
 
 
 class Ledger:
+    """The record, on ``conn``. :meth:`arecord` writes on a worker thread, so ``conn``
+    must be usable from other threads (``check_same_thread=False``)."""
+
     PRUNE_EVERY_S = 3600
 
     def __init__(self, conn: sqlite3.Connection, keep_days: int = 30, *, create: bool = True):

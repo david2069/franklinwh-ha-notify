@@ -2,6 +2,38 @@
 
 ## [Unreleased]
 
+## [0.1.4] — 2026-11-07
+
+Fixes from a peer review.
+
+### Fixed
+- **Two `wait()`s on one request both get the answer.** A second wait replaced the
+  first's future, and the first's clean-up removed the second's. Each request now keeps
+  a list of waiters; an answer resolves them all and each removes only its own.
+- **An ask no phone received is discarded.** `Notifier.ask` returned None but left the
+  request open (and, with persistent requests, in `notify_requests`), so `pending()`
+  listed it. New `Requests.discard` / `adiscard`.
+- **A tap handler runs in its own task.** The listener awaited it inline, so a handler
+  that called `ask_and_wait` couldn't receive its own answer on that instance until the
+  timeout. Running tasks are held until done; a failing one is logged and the socket stays.
+- **A malformed tap event no longer drops the socket.** A non-string `action` (or an
+  event without `data`) raised outside the handler's guard; it is now ignored.
+- **The listener checks the `subscribe_events` result.** A refused subscription is now
+  an error (`SubscribeError`, in `last_error`) with a retry, not a silent `connected`.
+- **Back-off starts again after a session that was connected** and then failed, instead
+  of carrying on from the last failure's step.
+- **`close()` takes the notifier's lock**, so an `add_instance` in progress can't start a
+  listener that outlives it.
+- **A template typo such as `{x.y}`, `{x[k]}` or `{0}` sends the text as written**, as
+  documented, instead of raising.
+- **A send with no targets is recorded as SKIPPED ("no targets")**, as the ledger docs
+  say, not ERROR (#4).
+
+### Docs
+- README: the ledger's connection is opened with `check_same_thread=False` (the ledger
+  writes on a worker thread; the `Ledger` docstring now says so), the example imports
+  `os`, and `ask()` returning None is handled before using `req.id`.
+
 ## [0.1.3] — 2026-11-04
 
 ### Added
