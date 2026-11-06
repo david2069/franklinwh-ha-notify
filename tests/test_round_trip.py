@@ -45,7 +45,8 @@ async def test_a_tap_reaches_the_handler_once(instance, fake_ha, ledger):
         await asyncio.sleep(0.02)
     assert calls == [("Home", YES)]
     got = [r["status"] for r in ledger.recent() if r["direction"] == "RECEIVED"]
-    assert got == ["used", "accepted: released"]
+    # Handlers run in their own tasks (0.1.4), so the two rows may be written in either order.
+    assert sorted(got) == ["accepted: released", "used"]
     assert [r for r in ledger.recent() if r["direction"] == "SENT"][0]["status"] == "2/2 delivered"
     await n.close()
 

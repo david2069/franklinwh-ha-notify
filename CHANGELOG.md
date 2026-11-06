@@ -16,6 +16,8 @@ Fixes from a peer review.
 - **A tap handler runs in its own task.** The listener awaited it inline, so a handler
   that called `ask_and_wait` couldn't receive its own answer on that instance until the
   timeout. Running tasks are held until done; a failing one is logged and the socket stays.
+  Taps still resolve in arrival order, but the ledger rows of taps handled at the same
+  time may be written in either order.
 - **A malformed tap event no longer drops the socket.** A non-string `action` (or an
   event without `data`) raised outside the handler's guard; it is now ignored.
 - **The listener checks the `subscribe_events` result.** A refused subscription is now
