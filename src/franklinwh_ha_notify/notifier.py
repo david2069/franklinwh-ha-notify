@@ -47,13 +47,17 @@ class Notifier:
                   ttl_s: float, gateway: str | None = None, meta: dict | None = None,
                   **values) -> Request | None:
         """Send with buttons. None when nothing went out (switched off, no phone
-        delivered), so the caller can apply its no-reply rule at once."""
+        delivered), so the caller can apply its no-reply rule at once. A request no phone
+        received is discarded, so :meth:`pending` doesn't list it."""
         if not any(t.buttons for t in targets):
             await self.ledger.arecord("SKIPPED", event, gateway=gateway, status="no target can show buttons")
             return None
         req = await self.requests.aopen(event, buttons, ttl_s, gateway, meta)
         res = await self._send(event, targets, gateway, req, values)
-        return req if res.delivered else None
+        if not res.delivered:
+            await self.requests.adiscard(req.id)
+            return None
+        return req
 
     async def ask_and_wait(self, event: str, targets: list[Target], buttons: list[Button], *,
                            timeout_s: float, gateway: str | None = None, **values) -> Answer:
@@ -88,6 +92,10 @@ class Notifier:
         if not self.enabled():
             await self.ledger.arecord("SKIPPED", event, gateway=gateway, title=title, message=message,
                                status="notifications are off")
+            return SendResult()
+        if not targets:
+            await self.ledger.arecord("SKIPPED", event, gateway=gateway, title=title, message=message,
+                                      status="no targets")
             return SendResult()
         res = await send(self.instances, targets, title, message,
                          list(req.buttons) if req else None, req.id if req else None)
@@ -176,8 +184,9 @@ class Notifier:
                 for iid, (ln, _) in self._listeners.items()}
 
     async def close(self) -> None:
-        for _, task in self._listeners.values():
-            task.cancel()
-        await asyncio.gather(*(t for _, t in self._listeners.values()), return_exceptions=True)
-        self._listeners.clear()
-        self._listening = False
+        async with self._lock:      # so an add_instance in progress can't start a listener after
+            self._listening = False
+            for _, task in self._listeners.values():
+                task.cancel()
+            await asyncio.gather(*(t for _, t in self._listeners.values()), return_exceptions=True)
+            self._listeners.clear()

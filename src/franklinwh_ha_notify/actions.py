@@ -154,7 +154,7 @@ class Requests:
     def __init__(self, clock: Callable[[], float] = time.time):
         self._clock = clock
         self._open: dict[str, Request] = {}
-        self._waiters: dict[str, asyncio.Future[Answer]] = {}
+        self._waiters: dict[str, list[asyncio.Future[Answer]]] = {}
         self._claimed: set[str] = set()
         self._store: _Store | None = None
 
@@ -197,6 +197,16 @@ class Requests:
             await asyncio.to_thread(self._store.opened, req, dropped)
         return req
 
+    def discard(self, request_id: str) -> None:
+        """Forget a request nobody received, so it isn't listed as pending."""
+        if self._open.pop(request_id, None) is not None and self._store:
+            self._store.purged([request_id])
+
+    async def adiscard(self, request_id: str) -> None:
+        """:meth:`discard`, writing the database off the event loop."""
+        if self._open.pop(request_id, None) is not None and self._store:
+            await asyncio.to_thread(self._store.purged, [request_id])
+
     def get(self, request_id: str) -> Request | None:
         return self._open.get(request_id)
 
@@ -222,9 +232,9 @@ class Requests:
             return Outcome("not-allowed", req)
         req.used = True
         ans = req.answer = Answer(verb, reply)
-        fut = self._waiters.pop(request_id, None)
-        if fut and not fut.done():
-            fut.set_result(ans)
+        for fut in self._waiters.pop(request_id, []):
+            if not fut.done():
+                fut.set_result(ans)
         return Outcome("accepted", req, ans)
 
     def resolve(self, verb: str, request_id: str, reply: str | None = None) -> Outcome:
@@ -241,13 +251,14 @@ class Requests:
         return out
 
     async def wait(self, request_id: str, timeout_s: float) -> Answer:
-        """The answer to one request, or ``Answer(None, timed_out=True)``."""
+        """The answer to one request, or ``Answer(None, timed_out=True)``. Several
+        callers may wait on one request; an answer reaches them all."""
         req = self._open.get(request_id)
         if req is not None and req.answer is not None:
             self._claimed.add(request_id)
             return req.answer           # answered before anyone waited
         fut = asyncio.get_running_loop().create_future()
-        self._waiters[request_id] = fut
+        self._waiters.setdefault(request_id, []).append(fut)
         try:
             ans = await asyncio.wait_for(fut, timeout_s)
             self._claimed.add(request_id)
@@ -255,7 +266,11 @@ class Requests:
         except asyncio.TimeoutError:
             return Answer(None, timed_out=True)
         finally:
-            self._waiters.pop(request_id, None)
+            futs = self._waiters.get(request_id)
+            if futs is not None and fut in futs:
+                futs.remove(fut)
+                if not futs:
+                    del self._waiters[request_id]
 
     def _drop_old(self) -> list[str]:
         cutoff = self._clock() - 3600

@@ -43,6 +43,7 @@ no webhook and nothing on the bridge accepts an unauthenticated call.
 ## Use
 
 ```python
+import os
 import sqlite3
 from franklinwh_ha_notify import (YES, NO, Button, Event, HAInstance, Ledger, Notifier,
                                   Templates, discover)
@@ -51,8 +52,9 @@ ha = HAInstance("home", "http://supervisor/core", token=lambda: os.environ["SUPE
 templates = Templates()
 templates.register(Event("force_left_running", "Force still running on {gateway}",
                          "A force from before the restart is still running. Release it?"))
-n = Notifier({"home": ha}, Ledger(sqlite3.connect("data/bridge.db")), templates,
-             enabled=lambda: settings.notifications_on)
+# The ledger writes on a worker thread, so the connection must allow that.
+db = sqlite3.connect("data/bridge.db", check_same_thread=False)
+n = Notifier({"home": ha}, Ledger(db), templates, enabled=lambda: settings.notifications_on)
 
 async def release(request, answer):
     if answer.verb == YES:
@@ -63,9 +65,13 @@ async def release(request, answer):
 n.on("force_left_running", release)
 n.listen()                                   # one tap listener per HA instance
 
+# Each tap's handler runs in its own task, so a handler may itself ask_and_wait.
+
 targets = [t for t in await discover(ha) if t.buttons]
-await n.ask("force_left_running", targets, [Button(YES, "Release"), Button(NO, "Keep")],
-            ttl_s=900, gateway="Home")
+req = await n.ask("force_left_running", targets, [Button(YES, "Release"), Button(NO, "Keep")],
+                  ttl_s=900, gateway="Home")
+if req is None:
+    ...                                      # nothing delivered (or switched off): no tap will come
 
 # Or wait for the answer inline, as a scheduler step does:
 answer = await n.ask_and_wait("ok_to_charge", targets, [Button(YES, "Yes"), Button(NO, "No")],
@@ -101,7 +107,8 @@ n = Notifier({"home": ha}, Ledger(db), templates, requests=Requests.persistent(d
 
 req = await n.ask("ok_to_charge", targets, [Button(YES, "Yes"), Button(NO, "No")],
                   ttl_s=1800, gateway="Home")
-save_step_state(request_id=req.id)           # the bridge's own record
+if req is not None:                          # None: nothing delivered, nothing to wait for
+    save_step_state(request_id=req.id)       # the bridge's own record
 
 # After a restart: a tap inside the TTL resolves to the original request and runs the
 # on() handler. A waiting step finds its request again and waits for the time left:

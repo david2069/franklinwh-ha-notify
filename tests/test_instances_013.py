@@ -39,7 +39,7 @@ async def test_an_instance_added_while_listening_gets_a_listener_and_its_taps(fa
     await n.add_instance(_inst(fake_ha))
     assert "home" in n.instances
     await asyncio.wait_for(fake_ha.subscribed.wait(), 5)
-    assert n.listener_status()["home"]["connected"]
+    assert await _until(lambda: n.listener_status()["home"]["connected"])
 
     req = await n.ask("release", [PHONE], [Button(YES, "Release")], ttl_s=60)
     await fake_ha.tap(f"FWH_YES_{req.id}")
@@ -77,6 +77,7 @@ async def test_a_new_token_restarts_the_listener(fake_ha, ledger):
 
     await n.add_instance(_inst(fake_ha))            # same id, corrected token
     await asyncio.wait_for(fake_ha.subscribed.wait(), 5)
+    assert await _until(lambda: n.listener_status()["home"]["connected"])
     st = n.listener_status()["home"]
     assert st["connected"] and st["error"] is None
     await n.close()

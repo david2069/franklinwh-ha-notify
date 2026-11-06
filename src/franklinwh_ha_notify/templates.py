@@ -59,5 +59,6 @@ class Templates:
         try:
             return (o.get("title", e.title).format_map(vals),
                     o.get("message", e.message).format_map(vals))
-        except (ValueError, IndexError):        # a stray "{" in a user's text
+        # A stray "{", "{0}", "{x.y}" or "{x[k]}" in a user's text.
+        except (ValueError, IndexError, KeyError, AttributeError, TypeError):
             return o.get("title", e.title), o.get("message", e.message)
